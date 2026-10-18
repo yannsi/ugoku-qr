@@ -42,11 +42,13 @@ header p{margin:2px 0 0;color:var(--muted);font-size:14px}
 .tabs button{border:0;background:transparent;color:var(--muted);font:700 15px var(--font);padding:10px;border-radius:8px;cursor:pointer}
 .tabs button[aria-selected="true"]{background:var(--panel);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;grid-template-columns:minmax(0,1fr);gap:14px;min-width:0}
-label.cap{font-size:13px;color:var(--muted);letter-spacing:.04em;display:block;margin-bottom:4px}
+.cap{font-size:13px;color:var(--muted);letter-spacing:.04em;display:block;margin-bottom:4px}
 textarea{width:100%;max-width:100%;min-height:120px;resize:vertical;font:16px/1.6 var(--font);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
 input[type=file]{font:14px var(--font);color:var(--muted);max-width:100%}
-.filerow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.filerow input{flex:1 1 200px;min-width:0}
+.filerow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.picked{flex:1 1 160px;min-width:0;overflow-wrap:anywhere;font-size:14px}
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);pointer-events:none}
+#pickedRow{margin-top:8px}
 .btn.small{font-size:14px;padding:8px 12px}
 select{font:16px var(--font);max-width:100%;width:100%;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
 input[type=range]{width:100%;accent-color:var(--accent)}
@@ -107,10 +109,19 @@ details p{font-size:14px;margin:8px 0 0}
         <textarea id="txt"></textarea>
       </div>
       <div>
-        <label class="cap" for="file">または、ファイルを選ぶ（写真は自動で小さくします）</label>
+        <span class="cap">または、ファイルを選ぶ（写真は自動で小さくします）</span>
         <div class="filerow">
-          <input id="file" type="file">
-          <button id="clearFile" class="btn sub small" hidden>ファイルを外す</button>
+          <button id="pickPhoto" class="btn sub small" type="button">写真</button>
+          <button id="pickAudio" class="btn sub small" type="button">音楽</button>
+          <button id="pickAny" class="btn sub small" type="button">その他のファイル</button>
+        </div>
+        <!-- Androidは種類を指定しないと選択画面が出ないことがあるので、種類ごとに分ける -->
+        <input id="filePhoto" class="vh" type="file" accept="image/*" tabindex="-1" aria-hidden="true">
+        <input id="fileAudio" class="vh" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.opus,.flac" tabindex="-1" aria-hidden="true">
+        <input id="fileAny" class="vh" type="file" accept="*/*" tabindex="-1" aria-hidden="true">
+        <div class="filerow" id="pickedRow" hidden>
+          <span id="fileName" class="picked"></span>
+          <button id="clearFile" class="btn sub small" type="button">ファイルを外す</button>
         </div>
       </div>
       <div id="audioRow" class="sub-box" hidden>
@@ -303,6 +314,7 @@ details p{font-size:14px;margin:8px 0 0}
   // ---------- 送る ----------
   const qrCanvas=$("#qr"), qctx=qrCanvas.getContext("2d");
   const fullCanvas=$("#qrFull"), fctx=fullCanvas.getContext("2d");
+  let picked=null;
   let job=null, n=0, timer=null, playing=true, cells=[], wake=null, last=[];
 
   function fitVersion(str){
@@ -500,11 +512,11 @@ details p{font-size:14px;margin:8px 0 0}
 
   async function build(){
     if(encoding)return;
-    const file=$("#file").files[0];
+    const file=picked;
     let bytes,meta,note="";
     $("#photoRow").hidden=!(file&&file.type.startsWith("image/"));
     $("#audioRow").hidden=!isAudio(file);
-    $("#clearFile").hidden=!file;
+    $("#pickedRow").hidden=!file;
     if(file&&isAudio(file)){
       if(!audioSrc||audioSrc.file!==file){if(!(await loadAudio(file)))return;}
       const pl=audioPlan();
@@ -593,24 +605,29 @@ details p{font-size:14px;margin:8px 0 0}
 
   $("#build").onclick=build;
   $("#fps").oninput=e=>{$("#fpsVal").textContent=e.target.value;if(timer)startLoop();};
-  $("#density").onchange=()=>{audioEstimate();if(!isAudio($("#file").files[0])||audioDone)build();};
-  $("#mode").onchange=()=>{if(!isAudio($("#file").files[0])||audioDone)build();};
+  $("#density").onchange=()=>{audioEstimate();if(!isAudio(picked)||audioDone)build();};
+  $("#mode").onchange=()=>{if(!isAudio(picked)||audioDone)build();};
   $("#clearFile").onclick=()=>{
     if(encoding)return;
-    $("#file").value="";audioSrc=null;audioDone=null;
-    $("#photoRow").hidden=true;$("#audioRow").hidden=true;$("#clearFile").hidden=true;
+    picked=null;audioSrc=null;audioDone=null;
+    $("#photoRow").hidden=true;$("#audioRow").hidden=true;$("#pickedRow").hidden=true;
     build();
   };
-  $("#file").onchange=async()=>{
-    const f=$("#file").files[0];
-    $("#clearFile").hidden=!f;
+  [["#pickPhoto","#filePhoto"],["#pickAudio","#fileAudio"],["#pickAny","#fileAny"]].forEach(([b,i])=>{
+    $(b).onclick=()=>{if(!encoding)$(i).click();};
+    $(i).onchange=e=>{const f=e.target.files[0];e.target.value="";if(f)onPicked(f);};
+  });
+  async function onPicked(f){
+    picked=f;
+    $("#fileName").textContent=`${f.name}（${kb(f.size)}）`;
+    $("#pickedRow").hidden=false;
     if(isAudio(f)){
       $("#photoRow").hidden=true;$("#audioRow").hidden=false;
       if(await loadAudio(f))$("#sendInfo").textContent="音質と範囲を選んで「この内容で動かす」を押してください。";
       return;
     }
     $("#audioRow").hidden=true;build();
-  };
+  }
   ["#aQual","#aStart","#aLen"].forEach(sel=>{$(sel).addEventListener("input",audioEstimate);$(sel).addEventListener("change",audioEstimate);});
   $("#fps").addEventListener("input",audioEstimate);
   $("#photoSize").onchange=()=>build();
