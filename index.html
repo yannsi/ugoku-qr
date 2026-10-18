@@ -127,7 +127,7 @@ details p{font-size:14px;margin:8px 0 0}
           </div>
         </div>
         <progress id="aProg" max="1" value="0" hidden></progress>
-        <p class="note">曲は選んだ長さと同じくらいの時間をかけて軽くします。その間はこの画面を開いたままにしてください。</p>
+        <p class="note">曲は送る前にMP3に変換して小さくします。数秒から十数秒かかります。</p>
       </div>
       <div id="photoRow" hidden>
         <label class="cap" for="photoSize">写真の大きさ</label>
@@ -337,16 +337,17 @@ details p{font-size:14px;margin:8px 0 0}
   }
 
   // ---------- 音楽を軽くする ----------
-  let audioCtx=null, audioSrc=null, audioDone=null, encoding=false, audioEl=null, audioNode=null;
+  let audioCtx=null, audioSrc=null, audioDone=null, encoding=false;
   function getCtx(){
     if(!audioCtx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;audioCtx=new AC();}
     if(audioCtx.state!=="running")audioCtx.resume().catch(()=>{});
     return audioCtx;
   }
   const isAudio=f=>!!f&&(f.type.startsWith("audio/")||/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i.test(f.name));
+  const isMp3=f=>/mpeg|mp3/i.test(f.type)||/\.mp3$/i.test(f.name);
   function span(t){t=Math.max(0,Math.round(t));const m=Math.floor(t/60),x=t%60;return (m?m+"分":"")+(x||!m?x+"秒":"")+"間";}
   function mmss(t){t=Math.max(0,Math.round(t));return Math.floor(t/60)+":"+String(t%60).padStart(2,"0");}
-  function audioDur(){const d=audioEl&&audioEl.duration;return d&&isFinite(d)?d:0;}
+  function audioDur(){return audioSrc&&audioSrc.dur||0;}
   function audioPlan(){
     const dur=audioDur();
     let start=Math.max(0,+$("#aStart").value||0);
@@ -355,83 +356,129 @@ details p{font-size:14px;margin:8px 0 0}
     let len=want>0?want:(dur?dur-start:0);
     if(dur)len=Math.min(len,dur-start);
     const kbps=+$("#aQual").value;
-    return {start,len,kbps,key:[audioSrc&&audioSrc.file.name,start,want,kbps].join("|")};
+    return {start,len,want,kbps,key:[audioSrc&&audioSrc.file.name,start,want,kbps].join("|")};
   }
   function audioEstimate(){
     if(!audioSrc)return;
     const pl=audioPlan(), dur=audioDur();
-    if(!pl.len){$("#audioLen").textContent="曲の長さは、軽くし始めると分かります。「最後まで」のときは曲の終わりまで録り直します。";return;}
+    if(!pl.len){$("#audioLen").textContent="曲の長さが分からなかったので、「最後まで」のときは曲全体を変換します。";return;}
     const size=pl.kbps*1000/8*pl.len;
     const B=+$("#density").value, fps=+$("#fps").value;
     const frames=Math.ceil(size/B*1.3);
     const sec=c=>Math.max(1,Math.round(frames/c/fps));
     $("#audioLen").textContent=`${dur?"曲の長さ "+mmss(dur)+"。":""}${mmss(pl.start)} から ${span(pl.len)}を送ると約 ${kb(Math.round(size))}、白黒で約 ${mmss(sec(1))}、カラーで約 ${mmss(sec(3))} かかる見込みです。`;
   }
-  // 曲は丸ごと読み込まず、音声プレーヤーで鳴らしながら録り直す（iPhoneでも大きな曲を扱える）
-  async function loadAudio(file){
-    if(audioEl){try{audioEl.pause();URL.revokeObjectURL(audioEl.src);}catch(e){}}
-    audioNode=null;audioDone=null;
-    const el=document.createElement("audio");
-    el.preload="metadata";el.playsInline=true;el.setAttribute("playsinline","");
-    el.src=URL.createObjectURL(file);
-    audioEl=el;audioSrc={file};
-    el.addEventListener("durationchange",audioEstimate);
-    $("#audioLen").textContent="曲を確認しています…";
-    const res=await new Promise(ok=>{
-      el.onloadedmetadata=()=>ok("ok");
-      el.onerror=()=>ok("err");
-      setTimeout(()=>ok("wait"),4000);
-      try{el.load();}catch(e){}
-    });
-    if(res==="err"){
-      audioSrc=null;
-      $("#audioLen").textContent="この曲はこの端末で再生できない形式でした。MP3やM4Aで試してください。";
-      return false;
+  // MP3の先頭から、1秒あたりのバイト数（ビットレート）を読む
+  async function mp3Rate(file){
+    const h=new Uint8Array(await file.slice(0,65536).arrayBuffer());
+    let i=0;
+    if(h[0]===0x49&&h[1]===0x44&&h[2]===0x33){i=10+((h[6]&127)<<21|(h[7]&127)<<14|(h[8]&127)<<7|(h[9]&127));}
+    if(i>=h.length-4){
+      const h2=new Uint8Array(await file.slice(i,i+4096).arrayBuffer());
+      return parseFrame(h2,0);
     }
+    return parseFrame(h,i);
+  }
+  function parseFrame(h,i){
+    const T1=[0,32,40,48,56,64,80,96,112,128,160,192,224,256,320],T2=[0,8,16,24,32,40,48,56,64,80,96,112,128,144,160];
+    for(;i<h.length-3;i++){
+      if(h[i]===0xFF&&(h[i+1]&0xE0)===0xE0&&((h[i+1]>>1)&3)===1){
+        const v1=((h[i+1]>>3)&3)===3, br=(v1?T1:T2)[(h[i+2]>>4)&15];
+        if(br)return br*1000/8;
+      }
+    }
+    return 0;
+  }
+  function decodeAB(ctx,ab){
+    return new Promise((ok,ng)=>{try{const p=ctx.decodeAudioData(ab,ok,e=>ng(e||new Error("decode")));if(p&&p.then)p.then(ok,ng);}catch(e){ng(e);}});
+  }
+  function getDuration(file){
+    return new Promise(ok=>{
+      const el=document.createElement("audio");el.preload="metadata";
+      const url=URL.createObjectURL(file);
+      const end=v=>{URL.revokeObjectURL(url);ok(v);};
+      el.onloadedmetadata=()=>end(isFinite(el.duration)?el.duration:0);
+      el.onerror=()=>end(0);
+      setTimeout(()=>end(0),3000);
+      el.src=url;try{el.load();}catch(e){}
+    });
+  }
+  async function loadAudio(file){
+    audioDone=null;
+    $("#audioLen").textContent="曲を確認しています…";
+    let dur=await getDuration(file);
+    if(!dur&&isMp3(file)){const r=await mp3Rate(file).catch(()=>0);if(r)dur=file.size/r;}
+    audioSrc={file,dur};
     audioEstimate();
     return true;
   }
-  function waitEvent(el,ev,ms){return new Promise(ok=>{const f=()=>{el.removeEventListener(ev,f);ok(true);};el.addEventListener(ev,f);setTimeout(()=>{el.removeEventListener(ev,f);ok(false);},ms);});}
-  async function encodeAudio(pl){
-    const types=["audio/webm;codecs=opus","audio/ogg;codecs=opus","audio/mp4;codecs=opus","audio/mp4","audio/webm"];
-    const mime=window.MediaRecorder&&types.find(t=>MediaRecorder.isTypeSupported(t));
-    if(!mime)throw new Error("このブラウザは音の録り直しに対応していません。");
-    const ctx=getCtx();
-    if(!ctx)throw new Error("このブラウザでは音を扱えません。");
-    const el=audioEl;
-    // 押した直後に再生を始める（iPhoneはボタン操作の直後でないと鳴らせない）
-    const playing=el.play();
-    if(!audioNode)audioNode=ctx.createMediaElementSource(el);
-    const dest=ctx.createMediaStreamDestination();
-    try{dest.channelCount=1;dest.channelCountMode="explicit";}catch(e){}
-    audioNode.connect(dest);
-    try{await playing;}catch(e){audioNode.disconnect(dest);throw new Error("曲を再生できませんでした（"+(e.name||"エラー")+"）。もう一度「この内容で動かす」を押してください。");}
-    await ctx.resume().catch(()=>{});
-    if(Math.abs(el.currentTime-pl.start)>0.3){el.currentTime=pl.start;await waitEvent(el,"seeked",5000);}
-    const rec=new MediaRecorder(dest.stream,{mimeType:mime,audioBitsPerSecond:pl.kbps*1000});
-    const parts=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)parts.push(e.data);};
-    const stopped=new Promise(r=>{rec.onstop=r;});
-    const prog=$("#aProg");prog.hidden=false;prog.value=0;
-    rec.start(1000);
-    const t0=el.currentTime;
-    await new Promise(done=>{
-      const iv=setInterval(()=>{
-        const len=pl.len||audioDur()-t0||1;
-        const t=el.currentTime-t0;
-        prog.value=Math.min(1,t/len);
-        $("#sendInfo").textContent=`曲を軽くしています… ${mmss(t)} / ${mmss(len)}`;
-        if(el.ended||(pl.len&&t>=pl.len)){clearInterval(iv);done();}
-      },100);
+  let lamePromise=null;
+  function loadLame(){
+    if(window.lamejs)return Promise.resolve();
+    if(!lamePromise)lamePromise=new Promise((ok,ng)=>{
+      const sc=document.createElement("script");
+      sc.src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js";
+      sc.onload=()=>window.lamejs?ok():ng(new Error("lamejs"));
+      sc.onerror=()=>{lamePromise=null;ng(new Error("MP3変換の部品を読み込めませんでした。ネットにつながった状態で開き直してください。"));};
+      document.head.appendChild(sc);
     });
-    el.pause();
-    rec.stop();await stopped;
-    try{audioNode.disconnect(dest);}catch(e){}
-    prog.hidden=true;
-    if(!pl.len)pl.len=el.currentTime-t0;
-    const type=mime.split(";")[0];
-    const blob=new Blob(parts,{type});
-    if(!blob.size)throw new Error("録り直した音が空でした。もう一度試してください。");
-    return {bytes:new Uint8Array(await blob.arrayBuffer()),type};
+    return lamePromise;
+  }
+  const tick0=()=>new Promise(r=>setTimeout(r,0));
+  // 必要な範囲だけ読み込み → モノラルで小さく → MP3 に変換
+  async function encodeAudio(pl){
+    const prog=$("#aProg");prog.hidden=false;prog.value=0;
+    const say=t=>{$("#sendInfo").textContent=t;};
+    let step="準備";
+    try{
+      step="変換の部品の読み込み";say("MP3変換の部品を読み込んでいます…");
+      await loadLame();
+      step="曲の読み込み";say("曲を読み込んでいます…");
+      const ctx=getCtx();
+      if(!ctx)throw new Error("このブラウザでは音を扱えません。");
+      const file=audioSrc.file, dur=audioDur();
+      let buf, off=pl.start;
+      const len0=pl.len||(dur?dur-pl.start:0);
+      if(isMp3(file)&&dur&&len0&&file.size>1.5e6){
+        // MP3は途中から切り出しても読めるので、使う部分だけ読む（メモリを節約）
+        const bps=file.size/dur;
+        const a=Math.max(0,Math.floor((pl.start-2)*bps)), z=Math.min(file.size,Math.ceil((pl.start+len0+2)*bps));
+        buf=await decodeAB(ctx,await file.slice(a,z).arrayBuffer());
+        off=Math.max(0,pl.start-a/bps);
+      }else{
+        buf=await decodeAB(ctx,await file.arrayBuffer());
+      }
+      prog.value=.3;
+      off=Math.min(off,Math.max(0,buf.duration-0.5));
+      const len=Math.min(len0||buf.duration-off,buf.duration-off);
+      if(!(len>0))throw new Error("選んだ範囲に音がありませんでした。開始位置を見直してください。");
+      step="モノラル化";say("音をまとめています…");
+      const sr=pl.kbps>=32?22050:16000; // MP3変換側で音の細かさを変えると無音になるため、変えずに済む組み合わせにする
+      const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+      const oc=new OAC(1,Math.ceil(len*sr),sr);
+      const src=oc.createBufferSource();src.buffer=buf;src.connect(oc.destination);src.start(0,off,len);
+      const rendered=await new Promise((ok,ng)=>{oc.oncomplete=e=>ok(e.renderedBuffer);const p=oc.startRendering();if(p&&p.then)p.then(ok,ng);});
+      buf=null;
+      prog.value=.45;
+      step="MP3への変換";
+      const pcm=rendered.getChannelData(0);
+      const enc=new lamejs.Mp3Encoder(1,sr,pl.kbps);
+      const parts=[], N=1152;
+      for(let i=0,k=0;i<pcm.length;i+=N,k++){
+        const n=Math.min(N,pcm.length-i), i16=new Int16Array(n);
+        for(let j=0;j<n;j++){const v=Math.max(-1,Math.min(1,pcm[i+j]));i16[j]=v<0?v*32768:v*32767;}
+        const out=enc.encodeBuffer(i16);
+        if(out.length)parts.push(new Uint8Array(out));
+        if(k%60===0){prog.value=.45+.55*i/pcm.length;say(`MP3に変換しています… ${Math.round(100*i/pcm.length)}%`);await tick0();}
+      }
+      const last=enc.flush();if(last.length)parts.push(new Uint8Array(last));
+      pl.len=len;
+      const blob=new Blob(parts,{type:"audio/mpeg"});
+      return {bytes:new Uint8Array(await blob.arrayBuffer()),type:"audio/mpeg",len};
+    }catch(e){
+      const why=e&&e.message&&!/^decode$/.test(e.message)?e.message:(e&&e.name)||"不明なエラー";
+      throw new Error(`「${step}」で止まりました（${why}）。曲の長さや形式を変えて試してください。`);
+    }finally{prog.hidden=true;}
   }
 
   async function build(){
@@ -451,9 +498,8 @@ details p{font-size:14px;margin:8px 0 0}
         finally{encoding=false;$("#build").disabled=false;$("#aProg").hidden=true;}
       }
       bytes=audioDone.bytes;
-      const ext={"audio/webm":".webm","audio/ogg":".ogg","audio/mp4":".m4a"}[audioDone.type]||".audio";
-      meta={name:file.name.replace(/\.[^.]+$/,"")+ext,type:audioDone.type,size:bytes.length};
-      note=`曲の ${mmss(pl.start)} から ${span(pl.len)}を ${pl.kbps}kbps に軽くしました（元の曲 ${kb(file.size)}）。`;
+      meta={name:file.name.replace(/\.[^.]+$/,"")+"_short.mp3",type:audioDone.type,size:bytes.length};
+      note=`曲の ${mmss(pl.start)} から ${span(audioDone.len)}を ${pl.kbps}kbps に軽くしました（元の曲 ${kb(file.size)}）。`;
     }else if(file){
       const small=await shrinkPhoto(file,+$("#photoSize").value);
       if(small&&small.bytes.length<file.size){
