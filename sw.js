@@ -1,7 +1,7 @@
 // 動くQR：一度開いたら、ページと部品を端末に保存してオフラインでも開けるようにする
-const VERSION = "ugoku-qr-v9";
+const VERSION = "ugoku-qr-v10";
 const CORE = [
-  "./", "./index.html", "./manifest.webmanifest",
+  "./index.html", "./manifest.webmanifest",
   "./lib/qrcode.js", "./lib/jsQR.js", "./lib/lame.min.js",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"
 ];
@@ -36,15 +36,20 @@ self.addEventListener("fetch", e => {
 
   if (url.origin !== location.origin) return;
 
-  // ページを開くとき：ネットがあれば最新を取り、なければ保存したものを出す
+  // ページを開くとき：ネットがあれば最新を取る。3秒待っても来なければ（または圏外なら）保存したものを出す
   if (req.mode === "navigate") {
-    e.respondWith(
-      fetch(req).then(r => {
-        const copy = r.clone();
-        caches.open(VERSION).then(c => c.put("./index.html", copy));
+    e.respondWith((async () => {
+      const cached = await caches.match("./index.html");
+      const net = fetch(req).then(r => {
+        if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put("./index.html", copy)); }
         return r;
-      }).catch(() => caches.match("./index.html"))
-    );
+      });
+      if (!cached) return net;
+      return Promise.race([
+        net.catch(() => cached),
+        new Promise(ok => setTimeout(() => ok(cached), 3000))
+      ]);
+    })());
     return;
   }
 
