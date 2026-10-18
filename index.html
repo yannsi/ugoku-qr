@@ -75,7 +75,7 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
 .warn{color:var(--warn)}
 .cam{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:1/1;max-width:100%}
 .cam video{width:100%;height:100%;object-fit:cover;display:block}
-.cam .aim{position:absolute;inset:12%;border:2px solid rgba(255,255,255,.7);border-radius:8px;pointer-events:none}
+.cam .aim{position:absolute;inset:15%;border:2px solid rgba(255,255,255,.7);border-radius:8px;pointer-events:none}
 .cam .idle{position:absolute;inset:0;display:grid;place-items:center;color:#cfd5e2;font-size:14px;text-align:center;padding:20px}
 .result{display:grid;gap:10px}
 .result pre{white-space:pre-wrap;word-break:break-word;margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;font:15px/1.7 var(--font);max-height:320px;overflow:auto}
@@ -84,6 +84,27 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
 .full{position:fixed;inset:0;z-index:20;background:#fff;display:grid;place-items:center;
   padding:calc(env(safe-area-inset-top,0px) + 12px) max(12px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 12px) max(12px,env(safe-area-inset-left,0px))}
 .full canvas{width:min(100%,calc(100vh - 24px));width:min(100%,calc(100dvh - 24px));height:auto;max-width:100%;aspect-ratio:1/1}
+#printView{position:fixed;inset:0;z-index:30;overflow:auto;background:var(--bg);
+  padding-block:calc(env(safe-area-inset-top,0px) + 16px) calc(env(safe-area-inset-bottom,0px) + 24px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#printView .pv-ui{margin-bottom:16px}
+.sheets{display:grid;justify-content:center;gap:12px;overflow-x:auto}
+.sheet{width:190mm;height:277mm;background:#fff;color:#000;display:flex;flex-direction:column;overflow:hidden;zoom:.42;box-shadow:0 2px 10px rgba(0,0,0,.18);font-family:var(--font)}
+.sh-head{height:15mm;flex:none;display:flex;gap:3mm;align-items:center;border-bottom:.3mm solid #000;font-size:8.5pt;line-height:1.4}
+.sh-head img{width:13mm;height:13mm;image-rendering:pixelated}
+.sh-head b{font-size:11pt}
+.sh-grid{display:grid;justify-content:center;align-content:start;margin-top:2mm}
+.sh-grid img{width:100%;height:100%;display:block;image-rendering:pixelated}
+@media print{
+  @page{size:A4 portrait;margin:10mm}
+  html,body{background:#fff!important;padding:0!important;overflow:visible!important}
+  body>*:not(#printView){display:none!important}
+  #printView{position:static!important;padding:0!important;background:#fff!important;overflow:visible!important}
+  #printView .pv-ui{display:none!important}
+  .sheets{display:block;overflow:visible}
+  .sheet{zoom:1!important;box-shadow:none!important;margin:0!important;break-after:page;page-break-after:always}
+  .sheet:last-child{break-after:auto;page-break-after:auto}
+}
 details summary{cursor:pointer;color:var(--muted);font-size:14px}
 details p{font-size:14px;margin:8px 0 0}
 </style>
@@ -145,7 +166,7 @@ details p{font-size:14px;margin:8px 0 0}
               <option value="15">15秒</option>
               <option value="30" selected>30秒</option>
               <option value="60">1分</option>
-              <option value="0">最後まで</option>
+              <option value="0">最後まで（1曲まるごと）</option>
             </select>
           </div>
         </div>
@@ -172,9 +193,9 @@ details p{font-size:14px;margin:8px 0 0}
         <div>
           <label class="cap" for="density">1コマの量</label>
           <select id="density">
-            <option value="150">少なめ（読みやすい）</option>
-            <option value="260" selected>ふつう</option>
-            <option value="450">多め（読みにくい）</option>
+            <option value="200">少なめ（読みやすい）</option>
+            <option value="350" selected>ふつう</option>
+            <option value="600">多め（読みにくい）</option>
           </select>
         </div>
       </div>
@@ -199,6 +220,7 @@ details p{font-size:14px;margin:8px 0 0}
       <div class="row">
         <button id="play" class="btn sub">一時停止</button>
         <button id="big" class="btn sub">大きく表示</button>
+        <button id="printBtn" class="btn sub">印刷用シート</button>
       </div>
       <p class="note">受け取る側は別のスマホで「受け取る」を開き、方式を送る側と同じにして、この画面にカメラを向けます。どのコマから読み始めても、どのコマを読み逃しても大丈夫です。</p>
     </div>
@@ -217,7 +239,7 @@ details p{font-size:14px;margin:8px 0 0}
       <div class="cam">
         <video id="video" playsinline muted></video>
         <div class="aim"></div>
-        <div id="camIdle" class="idle">「カメラを起動」を押して、動くQRを枠の中に映してください</div>
+        <div id="camIdle" class="idle">「カメラを起動」を押して、QRを枠の中に映してください。紙のときは、QRを1つずつ枠に入れていきます</div>
       </div>
       <div class="row">
         <button id="camBtn" class="btn">カメラを起動</button>
@@ -239,6 +261,40 @@ details p{font-size:14px;margin:8px 0 0}
   </details>
 </div>
 
+<div id="printView" hidden>
+  <div class="pv-ui wrap">
+    <div class="panel">
+      <b>印刷用シート（A4）</b>
+      <div class="row">
+        <div>
+          <label class="cap" for="pMod">QRの細かさ</label>
+          <select id="pMod">
+            <option value="0.5">粗め（読みやすい）</option>
+            <option value="0.4" selected>ふつう</option>
+            <option value="0.33">細かめ（たくさん入る）</option>
+          </select>
+        </div>
+        <div>
+          <label class="cap" for="pExtra">予備のQR</label>
+          <select id="pExtra">
+            <option value="0.3">3割（枚数を減らす）</option>
+            <option value="0.5" selected>5割</option>
+            <option value="1">10割（汚れや折れにとても強い）</option>
+          </select>
+        </div>
+      </div>
+      <progress id="pProg" max="1" value="0" hidden></progress>
+      <p id="pInfo" class="note"></p>
+      <div class="row">
+        <button id="pPrint" class="btn">印刷する</button>
+        <button id="pClose" class="btn sub">閉じる</button>
+      </div>
+      <p class="note">印刷画面で「PDFとして保存」を選ぶと、ファイルとしても残せます。iPhoneは共有ボタンから「プリント」を選んでください。白黒印刷で大丈夫です。</p>
+    </div>
+  </div>
+  <div id="sheets" class="sheets"></div>
+</div>
+
 <div id="full" class="full" hidden><canvas id="qrFull" width="720" height="720"></canvas></div>
 
 <script src="lib/qrcode.js"></script>
@@ -251,8 +307,13 @@ details p{font-size:14px;margin:8px 0 0}
   const SAMPLE = "動くQRの送信テストです。\n\nこの文字は、何枚かのQRコードに分けられて、順番にパラパラと表示されています。受け取る側のスマホでカメラを向けると、1枚ずつ読み取って、全部そろったところで元の文章に戻ります。\n\nネットにつながっていなくても、画面とカメラさえあれば渡せるのがポイントです。普通のQRコード1枚では入りきらない長い文章や、小さな写真・PDFも送れます。\n\n読み逃したコマがあっても、毎回違う組み合わせのコマが流れてくるので、どれを拾っても役に立ちます。";
 
   // ---------- 共通 ----------
-  function toB64(u8){let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s);}
-  function fromB64(s){const b=atob(s);const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+  // QRには文字に置き換えず、生のバイトをそのまま詰める（文字にするより3割多く入る）
+  // コマの形：[0x55 0x32][ID 4バイト][ブロック数 4][全体の長さ 4][種 4][データ]
+  const HDR=18;
+  function latin1(u8){let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return s;}
+  function w32(b,o,v){b[o]=v>>>24;b[o+1]=(v>>>16)&255;b[o+2]=(v>>>8)&255;b[o+3]=v&255;}
+  function r32(b,o){return b[o]*16777216+(b[o+1]<<16)+(b[o+2]<<8)+b[o+3];}
+  const hex=u8=>Array.from(u8,x=>x.toString(16).padStart(2,"0")).join("");
   async function gzip(u8){
     if(!("CompressionStream" in window)) return null;
     try{const st=new Blob([u8]).stream().pipeThrough(new CompressionStream("gzip"));return new Uint8Array(await new Response(st).arrayBuffer());}catch(e){return null;}
@@ -269,7 +330,7 @@ details p{font-size:14px;margin:8px 0 0}
     return el.children;
   }
   function xorInto(a,b){for(let i=0;i<a.length;i++)a[i]^=b[i];}
-  const OVERHEAD=1.15; // 受け取りに必要なコマは、ブロック数のおよそ1.15倍
+  const OVERHEAD=1.2; // 受け取りに必要なコマは、ブロック数のおよそ1.2倍
 
   // ---------- ファウンテン符号（LT符号） ----------
   // 送る側・受け取る側で同じ計算をするので、「種（seed）」の番号だけで混ぜ方が決まる
@@ -317,11 +378,11 @@ details p{font-size:14px;margin:8px 0 0}
   let picked=null;
   let job=null, n=0, timer=null, playing=true, cells=[], wake=null, last=[];
 
-  function fitVersion(str){
-    for(let t=1;t<=40;t++){try{const q=qrcode(t,"L");q.addData(str,"Byte");q.make();return t;}catch(e){}}
+  function fitVersion(str,ecc="L"){
+    for(let t=1;t<=40;t++){try{const q=qrcode(t,ecc);q.addData(str,"Byte");q.make();return t;}catch(e){}}
     return 40;
   }
-  function makeQR(str,ver){const q=qrcode(ver,"L");q.addData(str,"Byte");q.make();return q;}
+  function makeQR(str,ver,ecc="L"){const q=qrcode(ver,ecc);q.addData(str,"Byte");q.make();return q;}
   const COLORS={};
   function paint(ctx,canvas,qrs){
     const m=qrs[0].getModuleCount(), quiet=4;
@@ -451,6 +512,90 @@ details p{font-size:14px;margin:8px 0 0}
     return lamePromise;
   }
   const tick0=()=>new Promise(r=>setTimeout(r,0));
+  function id3Size(h){return h[0]===0x49&&h[1]===0x44&&h[2]===0x33?10+((h[6]&127)<<21|(h[7]&127)<<14|(h[8]&127)<<7|(h[9]&127)):0;}
+  function renderOC(oc){return new Promise((ok,ng)=>{oc.oncomplete=e=>ok(e.renderedBuffer);const p=oc.startRendering();if(p&&p.then)p.then(ok,ng);});}
+  // 音の一部分を、モノラル・指定の細かさ(sr)の数字の列にする
+  async function renderMono(buf,off,len,sr){
+    off=Math.max(0,Math.min(off,buf.duration));
+    len=Math.max(0,Math.min(len,buf.duration-off));
+    const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+    const oc=new OAC(1,Math.max(1,Math.ceil(len*sr)),sr);
+    const src=oc.createBufferSource();src.buffer=buf;src.connect(oc.destination);src.start(0,off,len);
+    return (await renderOC(oc)).getChannelData(0);
+  }
+  // つなぎ目合わせ：前の区切りの終わりと、次の区切りの始まりが一番よく重なる位置を探す
+  function bestMatch(out,E,filled,pcm,guess,sr){
+    const W=Math.round(0.25*sr),h=W>>1,R=Math.round(1.5*sr),D=8;
+    const clampP=p=>Math.max(h,Math.min(pcm.length-W,p));
+    if(E-h<0||E+h>filled)return clampP(guess);
+    let ea=0;for(let i=0;i<W;i+=D)ea+=out[E-h+i]*out[E-h+i];
+    if(ea<1e-6)return clampP(guess); // 無音なら推定の位置のまま
+    const score=(p,step)=>{let ab=0,bb=0;const o=E-h,q=p-h;for(let i=0;i<W;i+=step){const a=out[o+i],b=pcm[q+i];ab+=a*b;bb+=b*b;}return bb>0?ab/Math.sqrt(bb):-1;};
+    // 粗く探して上位の候補を残し、それぞれを1つずつ細かく比べる（低い音の周期に引っ張られないように）
+    const cand=[];
+    for(let p=clampP(guess-R);p<=clampP(guess+R);p+=D)cand.push([score(p,D),p]);
+    cand.sort((x,y)=>y[0]-x[0]);
+    const picked=[];
+    for(const c of cand){if(picked.length>=8)break;if(picked.every(q=>Math.abs(q-c[1])>D*2))picked.push(c[1]);}
+    let fb=clampP(guess),fs=-Infinity;
+    for(const c of picked)for(let p=clampP(c-D);p<=clampP(c+D);p++){const v=score(p,1);if(v>fs){fs=v;fb=p;}}
+    return fb;
+  }
+  // 曲の [start, start+len) を取り出す。長いMP3は30秒ずつ区切って読み込み、つなぎ目を合わせてつなぐ（iPhoneでもメモリが足りるように）
+  async function pcmRange(file,start,len,sr,onp,onstep){
+    const ctx=getCtx();
+    if(!ctx)throw new Error("このブラウザでは音を扱えません。");
+    const dur=audioDur();
+    const total=len||(dur?dur-start:0);
+    const SEG=30,OV=1;
+    const long=isMp3(file)&&dur&&total>SEG+5;
+    if(!long){
+      let buf,off=start;
+      if(isMp3(file)&&dur&&total&&file.size>1.5e6){
+        const bps=file.size/dur;
+        const a=Math.max(0,Math.floor((start-2)*bps)),z=Math.min(file.size,Math.ceil((start+total+2)*bps));
+        buf=await decodeAB(ctx,await file.slice(a,z).arrayBuffer());
+        off=Math.max(0,start-a/bps);
+      }else{
+        buf=await decodeAB(ctx,await file.arrayBuffer());
+      }
+      off=Math.min(off,Math.max(0,buf.duration-0.5));
+      onstep("モノラル化");onp(.8,"音をまとめています…");
+      return renderMono(buf,off,total||buf.duration-off,sr);
+    }
+    const head=new Uint8Array(await file.slice(0,10).arrayBuffer());
+    const id3=id3Size(head), bps=(file.size-id3)/dur;
+    const out=new Float32Array(Math.ceil(total*sr)+sr*2);
+    let filled=0;
+    const nseg=Math.ceil(total/SEG);
+    for(let k=0;k<nseg;k++){
+      const t=k*SEG, segStart=start+t, segEnd=Math.min(start+total,segStart+SEG);
+      onstep(`曲の読み込み（${k+1}/${nseg}）`);onp(k/nseg,`曲を読み込んでいます… ${k+1} / ${nseg}`);
+      const from=Math.max(0,segStart-OV-2), to=Math.min(dur,segEnd+OV+2);
+      const a=id3+Math.floor(from*bps), z=Math.min(file.size,id3+Math.ceil(to*bps));
+      const buf=await decodeAB(ctx,await file.slice(a,z).arrayBuffer());
+      const sliceT0=(a-id3)/bps;
+      const rFrom=Math.max(0,segStart-OV-sliceT0);
+      const pcm=await renderMono(buf,rFrom,(segEnd+OV)-(segStart-OV),sr);
+      const pcmT0=sliceT0+rFrom;
+      if(k===0){
+        const skip=Math.max(0,Math.min(pcm.length,Math.round((start-pcmT0)*sr)));
+        const n=Math.min(pcm.length-skip,out.length);
+        out.set(pcm.subarray(skip,skip+n),0);filled=n;
+      }else{
+        const E=Math.round(t*sr);
+        const p=bestMatch(out,E,filled,pcm,Math.round((segStart-pcmT0)*sr),sr);
+        const F=Math.round(0.03*sr);
+        for(let i=0;i<F&&E+i<out.length&&p+i<pcm.length;i++){const w=i/F;out[E+i]=out[E+i]*(1-w)+pcm[p+i]*w;}
+        const n=Math.min(pcm.length-p-F,out.length-E-F);
+        if(n>0)out.set(pcm.subarray(p+F,p+F+n),E+F);
+        filled=E+F+Math.max(0,n);
+      }
+      await tick0();
+    }
+    return out.subarray(0,Math.min(filled,Math.ceil(total*sr)));
+  }
+
   // 必要な範囲だけ読み込み → モノラルで小さく → MP3 に変換
   async function encodeAudio(pl){
     const prog=$("#aProg");prog.hidden=false;prog.value=0;
@@ -460,34 +605,12 @@ details p{font-size:14px;margin:8px 0 0}
       step="変換の部品の読み込み";say("MP3変換の部品を読み込んでいます…");
       await loadLame();
       step="曲の読み込み";say("曲を読み込んでいます…");
-      const ctx=getCtx();
-      if(!ctx)throw new Error("このブラウザでは音を扱えません。");
-      const file=audioSrc.file, dur=audioDur();
-      let buf, off=pl.start;
-      const len0=pl.len||(dur?dur-pl.start:0);
-      if(isMp3(file)&&dur&&len0&&file.size>1.5e6){
-        // MP3は途中から切り出しても読めるので、使う部分だけ読む（メモリを節約）
-        const bps=file.size/dur;
-        const a=Math.max(0,Math.floor((pl.start-2)*bps)), z=Math.min(file.size,Math.ceil((pl.start+len0+2)*bps));
-        buf=await decodeAB(ctx,await file.slice(a,z).arrayBuffer());
-        off=Math.max(0,pl.start-a/bps);
-      }else{
-        buf=await decodeAB(ctx,await file.arrayBuffer());
-      }
-      prog.value=.3;
-      off=Math.min(off,Math.max(0,buf.duration-0.5));
-      const len=Math.min(len0||buf.duration-off,buf.duration-off);
-      if(!(len>0))throw new Error("選んだ範囲に音がありませんでした。開始位置を見直してください。");
-      step="モノラル化";say("音をまとめています…");
       const sr=pl.kbps>=32?22050:16000; // MP3変換側で音の細かさを変えると無音になるため、変えずに済む組み合わせにする
-      const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
-      const oc=new OAC(1,Math.ceil(len*sr),sr);
-      const src=oc.createBufferSource();src.buffer=buf;src.connect(oc.destination);src.start(0,off,len);
-      const rendered=await new Promise((ok,ng)=>{oc.oncomplete=e=>ok(e.renderedBuffer);const p=oc.startRendering();if(p&&p.then)p.then(ok,ng);});
-      buf=null;
+      const pcm=await pcmRange(audioSrc.file,pl.start,pl.len,sr,(t,msg)=>{prog.value=.45*t;if(msg)say(msg);},s=>{step=s;});
+      const len=pcm.length/sr;
+      if(!(len>0.2))throw new Error("選んだ範囲に音がありませんでした。開始位置を見直してください。");
       prog.value=.45;
       step="MP3への変換";
-      const pcm=rendered.getChannelData(0);
       const enc=new lamejs.Mp3Encoder(1,sr,pl.kbps);
       const parts=[], N=1152;
       for(let i=0,k=0;i<pcm.length;i+=N,k++){
@@ -557,9 +680,9 @@ details p{font-size:14px;margin:8px 0 0}
     const K=Math.ceil(whole.length/B);
     const blocks=[];
     for(let i=0;i<K;i++){const b=new Uint8Array(B);b.set(whole.subarray(i*B,(i+1)*B));blocks.push(b);}
-    const id=Math.random().toString(36).slice(2,6).padEnd(4,"0");
-    job={id,K,B,len:whole.length,blocks,cdf:solitonCDF(K),idh:idHash(id)};
-    job.version=fitVersion(`UF:${id}:${K}:${whole.length}:99999999:`+toB64(new Uint8Array(B)));
+    const idb=crypto.getRandomValues(new Uint8Array(4)), id=hex(idb);
+    job={id,idb,K,B,len:whole.length,blocks,cdf:solitonCDF(K),idh:idHash(id),name:meta.name};
+    job.version=fitVersion(latin1(new Uint8Array(HDR+B)));
     n=0;
     cells=film($("#sendFilm"),K);
     const color=$("#mode").value==="color";
@@ -573,9 +696,11 @@ details p{font-size:14px;margin:8px 0 0}
 
   function frameStr(seed){
     const idx=indices(job,seed);
-    const out=new Uint8Array(job.B);
-    for(const i of idx)xorInto(out,job.blocks[i]);
-    return {str:`UF:${job.id}:${job.K}:${job.len}:${seed}:`+toB64(out),idx};
+    const out=new Uint8Array(HDR+job.B);
+    out[0]=0x55;out[1]=0x32;out.set(job.idb,2);w32(out,6,job.K);w32(out,10,job.len);w32(out,14,seed);
+    const body=out.subarray(HDR);
+    for(const i of idx)xorInto(body,job.blocks[i]);
+    return {str:latin1(out),idx};
   }
   function tick(){
     if(!job)return;
@@ -641,6 +766,68 @@ details p{font-size:14px;margin:8px 0 0}
   $("#stage").onclick=openFull;
   $("#full").onclick=()=>{$("#full").hidden=true;};
 
+
+  // ---------- 印刷用シート ----------
+  const pv=$("#printView");
+  let pUrls=[], pRun=0;
+  const qc=document.createElement("canvas"), qcx=qc.getContext("2d");
+  // QRを白黒の画像にする（1マス=px ピクセル。印刷でもにじみにくいよう大きめ）
+  function qrBlob(q,quiet,px){
+    const m=q.getModuleCount(),n=(m+quiet*2)*px;
+    if(qc.width!==n){qc.width=n;qc.height=n;}
+    qcx.fillStyle="#fff";qcx.fillRect(0,0,n,n);qcx.fillStyle="#000";
+    for(let r=0;r<m;r++)for(let c=0;c<m;c++)if(q.isDark(r,c))qcx.fillRect((c+quiet)*px,(r+quiet)*px,px,px);
+    return new Promise(ok=>qc.toBlob(b=>{const u=URL.createObjectURL(b);pUrls.push(u);ok(u);},"image/png"));
+  }
+  function clearSheets(){pUrls.forEach(u=>URL.revokeObjectURL(u));pUrls=[];$("#sheets").textContent="";}
+  async function makeSheets(){
+    if(!job)return;
+    const run=++pRun;
+    clearSheets();
+    const mod=+$("#pMod").value, extra=+$("#pExtra").value, QUIET=3;
+    const N=Math.ceil(job.K*(1+extra))+8;
+    const m=4*job.version+17, size=(m+QUIET*2)*mod; // QR1つの大きさ(mm)
+    const GAP=2; // QRどうしのすき間(mm)
+    const cols=Math.max(1,Math.floor((190+GAP)/(size+GAP))), rows=Math.max(1,Math.floor((277-17+GAP)/(size+GAP)));
+    const per=cols*rows, pages=Math.ceil(N/per);
+    const need=Math.ceil(job.K*OVERHEAD);
+    $("#pInfo").textContent=`QRを ${N} 個、A4で ${pages} 枚に並べます（1枚に ${cols}×${rows}＝${per} 個、1つ ${size.toFixed(0)}mm角）。どのQRから読んでもよく、およそ ${need} 個読めれば元に戻ります。`;
+    if(pages>120){
+      const w=document.createElement("span");w.className="warn";w.textContent=" 枚数が多すぎるので作りません。曲なら音質を「軽い」にするか、送る長さを短くしてください。";
+      $("#pInfo").appendChild(w);return;
+    }
+    $("#pPrint").disabled=true;
+    const prog=$("#pProg");prog.hidden=false;prog.value=0;
+    const recvURL=location.origin+location.pathname+"#receive";
+    const rq=qrcode(0,"M");rq.addData(recvURL);rq.make();
+    const recvImg=await qrBlob(rq,2,4);
+    for(let pg=0;pg<pages&&run===pRun;pg++){
+      const sh=document.createElement("div");sh.className="sheet";
+      const head=document.createElement("div");head.className="sh-head";
+      const ri=document.createElement("img");ri.src=recvImg;ri.alt="受け取りページ";
+      const tx=document.createElement("div");
+      const t1=document.createElement("b");t1.textContent=`動くQR　${job.name}`;
+      const t2=document.createElement("div");t2.textContent=`${pg+1} / ${pages} 枚目　全 ${N} 個のうち、どれでも約 ${need} 個読めば元に戻ります（順番は自由・汚れて読めないものがあっても大丈夫）`;
+      const t3=document.createElement("div");t3.textContent=`受け取り：左のQRのページを開き「受け取る」でカメラを向ける　${recvURL}`;
+      tx.append(t1,t2,t3);head.append(ri,tx);
+      const grid=document.createElement("div");grid.className="sh-grid";
+      grid.style.gridTemplateColumns=`repeat(${cols},${size}mm)`;grid.style.gridAutoRows=`${size}mm`;grid.style.gap=`${GAP}mm`;
+      for(let i=pg*per;i<Math.min(N,(pg+1)*per);i++){
+        const img=document.createElement("img");
+        img.src=await qrBlob(makeQR(frameStr(i).str,job.version),QUIET,6);
+        img.alt="";grid.appendChild(img);
+      }
+      sh.append(head,grid);$("#sheets").appendChild(sh);
+      prog.value=(pg+1)/pages;
+      await tick0();
+    }
+    if(run===pRun){prog.hidden=true;$("#pPrint").disabled=false;}
+  }
+  $("#printBtn").onclick=()=>{if(!job||encoding)return;stopLoop();pv.hidden=false;makeSheets();};
+  $("#pMod").onchange=makeSheets;$("#pExtra").onchange=makeSheets;
+  $("#pClose").onclick=()=>{pRun++;pv.hidden=true;clearSheets();if(!$("#paneSend").hidden)startLoop();};
+  $("#pPrint").onclick=()=>{try{window.print();}catch(e){$("#pInfo").textContent="印刷画面を開けませんでした。Safari や Chrome で開いて試してください。";}};
+
   // ---------- 受け取る ----------
   const video=$("#video");
   const scanCanvas=document.createElement("canvas");
@@ -677,23 +864,25 @@ details p{font-size:14px;margin:8px 0 0}
   function readImage(data,w,h){
     if($("#rxMode").value!=="color"){
       const r=jsQR(data,w,h,{inversionAttempts:"dontInvert"});
-      if(r&&r.data)handle(r.data);
+      if(r&&r.binaryData)handle(r.binaryData);
       return;
     }
     if(!chan||chan.length!==data.length)chan=new Uint8ClampedArray(data.length);
     for(let c=0;c<3;c++){
       for(let i=0;i<data.length;i+=4){const v=data[i+c];chan[i]=v;chan[i+1]=v;chan[i+2]=v;chan[i+3]=255;}
       const r=jsQR(chan,w,h,{inversionAttempts:"dontInvert"});
-      if(r&&r.data)handle(r.data);
+      if(r&&r.binaryData)handle(r.binaryData);
     }
   }
   // 1秒に約20回だけ探す（それ以上は発熱と電池の割に効果が小さい）
-  const SCAN_GAP=50;let lastScan=0;
+  const SCAN_GAP=50;let lastScan=0,scanFlip=false;
   function scan(now){
     if(!scanning)return;
     if(now-lastScan>=SCAN_GAP&&video.readyState>=2&&video.videoWidth){
       lastScan=now;
-      const w=video.videoWidth,h=video.videoHeight,side=Math.min(w,h);
+      // 画面全体と、枠の中（中央7割）を交互に読む。紙に並んだQRで隣が映り込んでも、枠の中の1つを読めるように
+      scanFlip=!scanFlip;
+      const w=video.videoWidth,h=video.videoHeight,side=Math.round(Math.min(w,h)*(scanFlip?0.7:1));
       const out=Math.min(side,$("#rxMode").value==="color"?640:800);
       if(scanCanvas.width!==out){scanCanvas.width=out;scanCanvas.height=out;}
       sctx.drawImage(video,(w-side)/2,(h-side)/2,side,side,0,0,out,out);
@@ -725,13 +914,13 @@ details p{font-size:14px;margin:8px 0 0}
     }
   }
   // ほどくだけで詰まったら、残りのコマをまとめて連立方程式として解く（XORの掃き出し法）
-  const GAUSS_MAX=600;
+  const GAUSS_MAX=450;
   function tryGauss(){
     const U=[],col=new Int32Array(rx.K).fill(-1);
     for(let i=0;i<rx.K;i++)if(!rx.blocks[i]){col[i]=U.length;U.push(i);}
     const u=U.length;
     if(!u||u>GAUSS_MAX||rx.pending.length<u)return;
-    if(rx.frames<rx.lastGauss+2)return; // 前回うまくいかなかったら、2枚以上読んでから試し直す
+    if(rx.frames<rx.lastGauss+Math.max(2,Math.ceil(u/25)))return; // うまくいかなかったら、少し読み進めてから試し直す（残りが多いほど間隔をあける）
     rx.lastGauss=rx.frames;
     const W=Math.ceil(u/32);
     const rows=rx.pending.map(s=>{
@@ -758,15 +947,13 @@ details p{font-size:14px;margin:8px 0 0}
     }
     rx.pending=[];
   }
-  function handle(text){
-    if(!text.startsWith("UF:"))return;
-    const p=text.split(":");
-    if(p.length!==6)return;
-    const id=p[1],K=+p[2],len=+p[3],seed=+p[4];
+  function handle(b){
+    if(!b||b.length<=HDR||b[0]!==0x55||b[1]!==0x32)return;
+    const id=hex(b.slice(2,6)),K=r32(b,6),len=r32(b,10),seed=r32(b,14);
     // おかしな値のQRは無視する（極端なブロック数でメモリを使い切らないように）
-    if(!/^[0-9a-z]{4}$/.test(id)||!Number.isInteger(K)||K<1||K>20000||!Number.isInteger(seed)||seed<0||seed>2147483647)return;
-    let data;try{data=fromB64(p[5]);}catch(e){return;}
-    if(data.length<1||data.length>3000||!Number.isInteger(len)||len>K*data.length||len<=(K-1)*data.length)return;
+    if(K<1||K>20000||seed>2147483647)return;
+    const data=Uint8Array.from(b.slice(HDR));
+    if(data.length>3000||len>K*data.length||len<=(K-1)*data.length)return;
     if(!rx||rx.id!==id||rx.K!==K){
       if(rxUrl){URL.revokeObjectURL(rxUrl);rxUrl=null;}
       rx={id,K,len,B:data.length,cdf:solitonCDF(K),idh:idHash(id),blocks:new Array(K).fill(null),known:0,pending:[],seen:new Set(),frames:0,done:false,lastGauss:-2};
@@ -847,7 +1034,7 @@ details p{font-size:14px;margin:8px 0 0}
   if(!navigator.onLine)off.textContent="オフラインで動いています。";
 
   // 動作確認用（アドレスに ?test を付けたときだけ）
-  if(/[?&]test\b/.test(location.search))window.ugokuQR={readImage};
+  if(/[?&]test\b/.test(location.search))window.ugokuQR={readImage,audio:()=>audioDone&&audioDone.bytes};
 
   // ---------- 開始 ----------
   $("#txt").value=SAMPLE;
