@@ -91,8 +91,17 @@ details p{font-size:14px;margin:8px 0 0}
         <textarea id="txt"></textarea>
       </div>
       <div>
-        <label class="cap" for="file">または、ファイルを選ぶ（写真・PDFなど／200KBまでが目安）</label>
+        <label class="cap" for="file">または、ファイルを選ぶ（写真は自動で小さくします）</label>
         <input id="file" type="file">
+      </div>
+      <div id="photoRow" hidden>
+        <label class="cap" for="photoSize">写真の大きさ</label>
+        <select id="photoSize">
+          <option value="480">小さめ（早く送れる）</option>
+          <option value="640" selected>ふつう</option>
+          <option value="960">大きめ（きれいだが時間がかかる）</option>
+          <option value="0">縮めない</option>
+        </select>
       </div>
       <div class="row">
         <div>
@@ -215,12 +224,39 @@ details p{font-size:14px;margin:8px 0 0}
     for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(qr.isDark(r,c))ctx.fillRect(off+c*cell,off+r*cell,cell,cell);
   }
 
+  // 写真を長い辺 max px の JPEG に縮める（縮められない形式なら null）
+  async function shrinkPhoto(file,max){
+    if(!max||!/^image\/(jpeg|png|webp|heic|heif|bmp)$/i.test(file.type))return null;
+    let src;
+    try{src=await createImageBitmap(file,{imageOrientation:"from-image"});}
+    catch(e){
+      try{
+        src=await new Promise((ok,ng)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=ng;im.src=URL.createObjectURL(file);});
+      }catch(e2){return null;}
+    }
+    const w0=src.width,h0=src.height,k=Math.min(1,max/Math.max(w0,h0));
+    const w=Math.round(w0*k),h=Math.round(h0*k);
+    const c=document.createElement("canvas");c.width=w;c.height=h;
+    const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,w,h);x.drawImage(src,0,0,w,h);
+    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.6));
+    if(!blob)return null;
+    return {bytes:new Uint8Array(await blob.arrayBuffer()),w,h};
+  }
+
   async function build(){
     const file=$("#file").files[0];
-    let bytes,meta;
+    let bytes,meta,note="";
+    $("#photoRow").hidden=!(file&&file.type.startsWith("image/"));
     if(file){
-      bytes=new Uint8Array(await file.arrayBuffer());
-      meta={name:file.name,type:file.type||"application/octet-stream",size:bytes.length};
+      const small=await shrinkPhoto(file,+$("#photoSize").value);
+      if(small&&small.bytes.length<file.size){
+        bytes=small.bytes;
+        meta={name:file.name.replace(/\.[^.]+$/,"")+".jpg",type:"image/jpeg",size:bytes.length};
+        note=`元の写真 ${kb(file.size)} を ${small.w}×${small.h} に縮めました。`;
+      }else{
+        bytes=new Uint8Array(await file.arrayBuffer());
+        meta={name:file.name,type:file.type||"application/octet-stream",size:bytes.length};
+      }
     }else{
       const t=$("#txt").value;
       if(!t.trim()){$("#sendInfo").textContent="送る文字を入れるか、ファイルを選んでください。";return;}
@@ -244,7 +280,7 @@ details p{font-size:14px;margin:8px 0 0}
     const fps=+$("#fps").value;
     const secs=(n/fps).toFixed(1);
     $("#sendInfo").innerHTML="";
-    const info=`${meta.name}（${kb(meta.size)}${z?"、圧縮後 "+kb(payload.length):""}）を ${n} コマに分けました。1周 約${secs}秒。`;
+    const info=note+`${meta.name}（${kb(meta.size)}${z?"、圧縮後 "+kb(payload.length):""}）を ${n} コマに分けました。1周 約${secs}秒。`;
     $("#sendInfo").textContent=info;
     if(n>400){const w=document.createElement("span");w.className="warn";w.textContent=" コマ数が多いので、受け取りに時間がかかります。";$("#sendInfo").appendChild(w);}
     playing=true;$("#play").textContent="一時停止";
@@ -279,6 +315,7 @@ details p{font-size:14px;margin:8px 0 0}
   $("#fps").oninput=e=>{$("#fpsVal").textContent=e.target.value;if(timer)startLoop();};
   $("#density").onchange=()=>build();
   $("#file").onchange=()=>build();
+  $("#photoSize").onchange=()=>build();
   $("#play").onclick=()=>{
     playing=!playing;
     $("#play").textContent=playing?"一時停止":"再生";
