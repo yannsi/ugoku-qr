@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>動くQR</title>
+<meta name="theme-color" content="#1f4fd1">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="動くQR">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
@@ -83,6 +89,7 @@ details p{font-size:14px;margin:8px 0 0}
   <header>
     <h1>動くQR</h1>
     <p>QRをパラパラ漫画のように切り替えて、ネットなしで文字やファイルを渡します。</p>
+    <p id="offline" class="note"></p>
   </header>
 
   <div class="tabs" role="tablist">
@@ -218,8 +225,8 @@ details p{font-size:14px;margin:8px 0 0}
 
 <div id="full" class="full" hidden><canvas id="qrFull" width="720" height="720"></canvas></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="lib/qrcode.js"></script>
+<script src="lib/jsQR.js"></script>
 <script>
 (() => {
   const $ = s => document.querySelector(s);
@@ -417,9 +424,9 @@ details p{font-size:14px;margin:8px 0 0}
     if(window.lamejs)return Promise.resolve();
     if(!lamePromise)lamePromise=new Promise((ok,ng)=>{
       const sc=document.createElement("script");
-      sc.src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js";
+      sc.src="lib/lame.min.js";
       sc.onload=()=>window.lamejs?ok():ng(new Error("lamejs"));
-      sc.onerror=()=>{lamePromise=null;ng(new Error("MP3変換の部品を読み込めませんでした。ネットにつながった状態で開き直してください。"));};
+      sc.onerror=()=>{lamePromise=null;ng(new Error("MP3変換の部品を読み込めませんでした。一度ネットにつながった状態でページを開き直してください。"));};
       document.head.appendChild(sc);
     });
     return lamePromise;
@@ -749,6 +756,18 @@ details p{font-size:14px;margin:8px 0 0}
     }
     res.hidden=false;
   }
+
+  // ---------- オフライン対応 ----------
+  const off=$("#offline");
+  const standalone=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+  if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")){
+    navigator.serviceWorker.register("sw.js").then(()=>navigator.serviceWorker.ready).then(()=>{
+      off.textContent=!navigator.onLine?"オフラインで動いています。":standalone
+        ?"オフラインで使えます。機内モードでもこのアイコンから開けます。"
+        :"オフラインの準備ができました。ホーム画面に追加すると、ネットなしでも開けます（iPhoneはSafariの共有ボタン →「ホーム画面に追加」）。";
+    }).catch(()=>{off.textContent="";});
+  }
+  if(!navigator.onLine)off.textContent="オフラインで動いています。";
 
   // テスト用（画面の操作には使わない）
   window.ugokuQR={readImage};

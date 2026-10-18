@@ -1,0 +1,16 @@
+{
+  "name": "動くQR",
+  "short_name": "動くQR",
+  "description": "QRをパラパラ漫画のように切り替えて、ネットなしで文字・写真・音楽を渡します。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef0f4",
+  "theme_color": "#1f4fd1",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
