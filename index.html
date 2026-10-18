@@ -41,6 +41,11 @@ textarea{width:100%;max-width:100%;min-height:120px;resize:vertical;font:16px/1.
 input[type=file]{font:14px var(--font);color:var(--muted);max-width:100%}
 select{font:16px var(--font);max-width:100%;width:100%;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
 input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=number]{font:16px var(--font);width:100%;max-width:100%;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;font-variant-numeric:tabular-nums}
+progress{width:100%;height:10px;accent-color:var(--accent)}
+.sub-box{display:grid;gap:10px;padding:12px;border:1px dashed var(--line);border-radius:10px}
+.btn:disabled{opacity:.55;cursor:default}
+.result audio{width:100%}
 .row{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
 .row>*{flex:1 1 140px;min-width:0}
 .btn{border:0;background:var(--accent);color:var(--accent-ink);font:700 16px var(--font);padding:12px 18px;border-radius:10px;cursor:pointer}
@@ -95,6 +100,34 @@ details p{font-size:14px;margin:8px 0 0}
       <div>
         <label class="cap" for="file">または、ファイルを選ぶ（写真は自動で小さくします）</label>
         <input id="file" type="file">
+      </div>
+      <div id="audioRow" class="sub-box" hidden>
+        <p id="audioLen" class="note">曲を読み込んでいます…</p>
+        <div class="row">
+          <div>
+            <label class="cap" for="aQual">音質</label>
+            <select id="aQual">
+              <option value="16">軽い（16kbps）</option>
+              <option value="24" selected>ふつう（24kbps）</option>
+              <option value="32">きれい（32kbps）</option>
+            </select>
+          </div>
+          <div>
+            <label class="cap" for="aStart">開始位置（秒）</label>
+            <input id="aStart" type="number" min="0" step="1" value="0" inputmode="numeric">
+          </div>
+          <div>
+            <label class="cap" for="aLen">送る長さ</label>
+            <select id="aLen">
+              <option value="15">15秒</option>
+              <option value="30" selected>30秒</option>
+              <option value="60">1分</option>
+              <option value="0">最後まで</option>
+            </select>
+          </div>
+        </div>
+        <progress id="aProg" max="1" value="0" hidden></progress>
+        <p class="note">曲は選んだ長さと同じくらいの時間をかけて軽くします。その間はこの画面を開いたままにしてください。</p>
       </div>
       <div id="photoRow" hidden>
         <label class="cap" for="photoSize">写真の大きさ</label>
@@ -303,11 +336,98 @@ details p{font-size:14px;margin:8px 0 0}
     return {bytes:new Uint8Array(await blob.arrayBuffer()),w,h};
   }
 
+  // ---------- 音楽を軽くする ----------
+  let audioCtx=null, audioSrc=null, audioDone=null, encoding=false;
+  function getCtx(){
+    if(!audioCtx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;audioCtx=new AC();}
+    audioCtx.resume().catch(()=>{});
+    return audioCtx;
+  }
+  const isAudio=f=>!!f&&(f.type.startsWith("audio/")||/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|webm)$/i.test(f.name));
+  function span(t){t=Math.max(0,Math.round(t));const m=Math.floor(t/60),x=t%60;return (m?m+"分":"")+(x||!m?x+"秒":"")+"間";}
+  function mmss(t){t=Math.max(0,Math.round(t));return Math.floor(t/60)+":"+String(t%60).padStart(2,"0");}
+  function audioPlan(){
+    const dur=audioSrc?audioSrc.buf.duration:0;
+    const start=Math.min(Math.max(0,+$("#aStart").value||0),Math.max(0,dur-1));
+    const want=+$("#aLen").value;
+    const len=want>0?Math.min(want,dur-start):dur-start;
+    const kbps=+$("#aQual").value;
+    return {start,len,kbps,key:[audioSrc&&audioSrc.file.name,start,len,kbps].join("|")};
+  }
+  function audioEstimate(){
+    if(!audioSrc)return;
+    const pl=audioPlan();
+    const size=pl.kbps*1000/8*pl.len;
+    const B=+$("#density").value, fps=+$("#fps").value;
+    const frames=Math.ceil(size/B*1.3);
+    const sec=c=>Math.max(1,Math.round(frames/c/fps));
+    $("#audioLen").textContent=`曲の長さ ${mmss(audioSrc.buf.duration)}。${mmss(pl.start)} から ${span(pl.len)}を送ると約 ${kb(Math.round(size))}、白黒で約 ${mmss(sec(1))}、カラーで約 ${mmss(sec(3))} かかる見込みです。`;
+  }
+  async function loadAudio(file){
+    const ctx=getCtx();
+    if(!ctx){$("#audioLen").textContent="このブラウザでは音楽を読み込めません。";return false;}
+    $("#audioLen").textContent="曲を読み込んでいます…";
+    try{
+      const buf=await ctx.decodeAudioData((await file.arrayBuffer()).slice(0));
+      audioSrc={file,buf};audioDone=null;
+      audioEstimate();
+      return true;
+    }catch(e){
+      audioSrc=null;
+      $("#audioLen").textContent="この曲の形式は読み込めませんでした。MP3やM4Aで試してください。";
+      return false;
+    }
+  }
+  // 選んだ範囲をモノラルにして、声・音楽向けの圧縮（Opus など）で録り直す
+  async function encodeAudio(pl){
+    const types=["audio/webm;codecs=opus","audio/ogg;codecs=opus","audio/mp4;codecs=opus","audio/mp4","audio/webm"];
+    const mime=window.MediaRecorder&&types.find(t=>MediaRecorder.isTypeSupported(t));
+    if(!mime)throw new Error("このブラウザは音の圧縮に対応していません。");
+    const ctx=getCtx(), buf=audioSrc.buf, sr=buf.sampleRate;
+    const s0=Math.floor(pl.start*sr), s1=Math.min(buf.length,s0+Math.floor(pl.len*sr));
+    const mono=ctx.createBuffer(1,s1-s0,sr), out=mono.getChannelData(0), nc=buf.numberOfChannels;
+    for(let c=0;c<nc;c++){const d=buf.getChannelData(c);for(let i=0;i<out.length;i++)out[i]+=d[s0+i]/nc;}
+    const src=ctx.createBufferSource();src.buffer=mono;
+    const dest=ctx.createMediaStreamDestination();
+    try{dest.channelCount=1;}catch(e){}
+    src.connect(dest);
+    const rec=new MediaRecorder(dest.stream,{mimeType:mime,audioBitsPerSecond:pl.kbps*1000});
+    const parts=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)parts.push(e.data);};
+    const stopped=new Promise(r=>{rec.onstop=r;});
+    const prog=$("#aProg");prog.hidden=false;prog.value=0;
+    rec.start(1000);
+    const t0=ctx.currentTime, dur=out.length/sr;
+    src.start();
+    const iv=setInterval(()=>{const t=Math.min(dur,ctx.currentTime-t0);prog.value=t/dur;$("#sendInfo").textContent=`曲を軽くしています… ${mmss(t)} / ${mmss(dur)}`;},250);
+    await new Promise(r=>{src.onended=r;});
+    await new Promise(r=>setTimeout(r,300));
+    rec.stop();await stopped;clearInterval(iv);prog.hidden=true;
+    const type=mime.split(";")[0];
+    const blob=new Blob(parts,{type});
+    return {bytes:new Uint8Array(await blob.arrayBuffer()),type};
+  }
+
   async function build(){
+    if(encoding)return;
     const file=$("#file").files[0];
     let bytes,meta,note="";
     $("#photoRow").hidden=!(file&&file.type.startsWith("image/"));
-    if(file){
+    $("#audioRow").hidden=!isAudio(file);
+    if(file&&isAudio(file)){
+      getCtx();
+      if(!audioSrc||audioSrc.file!==file){if(!(await loadAudio(file)))return;}
+      const pl=audioPlan();
+      if(!audioDone||audioDone.key!==pl.key){
+        encoding=true;$("#build").disabled=true;stopLoop();
+        try{audioDone={key:pl.key,...(await encodeAudio(pl))};}
+        catch(e){$("#sendInfo").textContent=e.message||"曲を軽くできませんでした。";return;}
+        finally{encoding=false;$("#build").disabled=false;$("#aProg").hidden=true;}
+      }
+      bytes=audioDone.bytes;
+      const ext={"audio/webm":".webm","audio/ogg":".ogg","audio/mp4":".m4a"}[audioDone.type]||".audio";
+      meta={name:file.name.replace(/\.[^.]+$/,"")+ext,type:audioDone.type,size:bytes.length};
+      note=`曲の ${mmss(pl.start)} から ${span(pl.len)}を ${pl.kbps}kbps に軽くしました（元の曲 ${kb(file.size)}）。`;
+    }else if(file){
       const small=await shrinkPhoto(file,+$("#photoSize").value);
       if(small&&small.bytes.length<file.size){
         bytes=small.bytes;
@@ -382,9 +502,19 @@ details p{font-size:14px;margin:8px 0 0}
 
   $("#build").onclick=build;
   $("#fps").oninput=e=>{$("#fpsVal").textContent=e.target.value;if(timer)startLoop();};
-  $("#density").onchange=()=>build();
-  $("#mode").onchange=()=>build();
-  $("#file").onchange=()=>build();
+  $("#density").onchange=()=>{audioEstimate();if(!isAudio($("#file").files[0])||audioDone)build();};
+  $("#mode").onchange=()=>{if(!isAudio($("#file").files[0])||audioDone)build();};
+  $("#file").onchange=async()=>{
+    const f=$("#file").files[0];
+    if(isAudio(f)){
+      $("#photoRow").hidden=true;$("#audioRow").hidden=false;
+      if(await loadAudio(f))$("#sendInfo").textContent="音質と範囲を選んで「この内容で動かす」を押してください。";
+      return;
+    }
+    $("#audioRow").hidden=true;build();
+  };
+  ["#aQual","#aStart","#aLen"].forEach(sel=>{$(sel).addEventListener("input",audioEstimate);$(sel).addEventListener("change",audioEstimate);});
+  $("#fps").addEventListener("input",audioEstimate);
   $("#photoSize").onchange=()=>build();
   $("#play").onclick=()=>{
     playing=!playing;
@@ -525,6 +655,12 @@ details p{font-size:14px;margin:8px 0 0}
         const cp=document.createElement("button");cp.className="btn sub";cp.textContent="文字をコピー";
         cp.onclick=async()=>{try{await navigator.clipboard.writeText(t);cp.textContent="コピーしました";}catch(e){const s=getSelection();const rg=document.createRange();rg.selectNodeContents(pre);s.removeAllRanges();s.addRange(rg);cp.textContent="選択しました。長押しでコピー";}};
         res.appendChild(cp);
+      }else if(meta.type.startsWith("audio/")){
+        const au=document.createElement("audio");au.controls=true;au.src=URL.createObjectURL(blob);
+        // 録音で作った音声は長さの情報がないことがあるので、一度末尾まで送って長さを確定させる
+        au.addEventListener("loadedmetadata",()=>{if(au.duration===Infinity){au.currentTime=1e101;au.addEventListener("timeupdate",function f(){au.removeEventListener("timeupdate",f);au.currentTime=0;});}});
+        au.onerror=()=>{const w=document.createElement("p");w.className="note warn";w.textContent="この端末ではこの形式を再生できませんでした。保存して別のアプリで開いてみてください。";au.replaceWith(w);};
+        res.appendChild(au);
       }else if(meta.type.startsWith("image/")){
         const img=document.createElement("img");img.src=URL.createObjectURL(blob);img.alt=meta.name;res.appendChild(img);
       }
