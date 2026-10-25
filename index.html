@@ -73,9 +73,29 @@ progress{width:100%;height:10px;accent-color:var(--accent)}
 .film i.got{background:var(--ok)}
 .note{font-size:13px;color:var(--muted);margin:0}
 .warn{color:var(--warn)}
+.okmsg{color:var(--ok);font-weight:700}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:14px;cursor:pointer}
+.check input{width:20px;height:20px;margin:2px 0 0;flex:none;accent-color:var(--accent)}
+.btn.listening{background:var(--ok);color:var(--accent-ink)}
 .cam{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:1/1;max-width:100%}
 .cam video{width:100%;height:100%;object-fit:cover;display:block}
 .cam .aim{position:absolute;inset:15%;border:2px solid rgba(255,255,255,.7);border-radius:8px;pointer-events:none}
+.rxstat{display:grid;gap:8px;padding:14px;border-radius:10px;background:var(--cell)}
+.rxstat[data-state="receiving"]{background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+.rxstat[data-state="stalled"]{background:color-mix(in srgb,var(--warn) 16%,var(--panel))}
+.rxstat[data-state="done"]{background:color-mix(in srgb,var(--ok) 18%,var(--panel))}
+.rxhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.rxhead b{font-size:18px;line-height:1.4}
+.rxpct{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.bar{height:12px;border-radius:6px;background:var(--panel);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:6px}
+.rxstat[data-state="done"] .bar i{background:var(--ok)}
+.rxstat[data-state="stalled"] .bar i{background:var(--warn)}
+.rxsub{margin:0;font-size:14px;line-height:1.6}
+.campct{position:absolute;left:12px;top:12px;background:rgba(0,0,0,.6);color:#fff;font-weight:700;font-size:22px;padding:2px 12px;border-radius:999px;font-variant-numeric:tabular-nums;pointer-events:none}
+details.more summary{cursor:pointer;font-size:13px;color:var(--muted)}
+details.more[open]{display:grid;gap:8px}
+@media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s}}
 .cam .idle{position:absolute;inset:0;display:grid;place-items:center;color:#cfd5e2;font-size:14px;text-align:center;padding:20px}
 .result{display:grid;gap:10px}
 .result pre{white-space:pre-wrap;word-break:break-word;margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;font:15px/1.7 var(--font);max-height:320px;overflow:auto}
@@ -222,6 +242,10 @@ details p{font-size:14px;margin:8px 0 0}
         <button id="big" class="btn sub">大きく表示</button>
         <button id="printBtn" class="btn sub">印刷用シート</button>
       </div>
+      <div class="row">
+        <button id="listenBtn" class="btn sub" type="button">音の合図で止める</button>
+      </div>
+      <p id="listenInfo" class="note">押すとマイクで音を聞きます。受け取った側が合図の音を鳴らしたら、自動で止まります。</p>
       <p class="note">受け取る側は別のスマホで「受け取る」を開き、方式を送る側と同じにして、この画面にカメラを向けます。どのコマから読み始めても、どのコマを読み逃しても大丈夫です。</p>
     </div>
   </section>
@@ -240,16 +264,26 @@ details p{font-size:14px;margin:8px 0 0}
         <video id="video" playsinline muted></video>
         <div class="aim"></div>
         <div id="camIdle" class="idle">「カメラを起動」を押して、QRを枠の中に映してください。紙のときは、QRを1つずつ枠に入れていきます</div>
+        <div id="camPct" class="campct" hidden></div>
+      </div>
+      <div id="rxStatus" class="rxstat" data-state="idle" role="status" aria-live="polite">
+        <div class="rxhead"><b id="rxTitle">カメラを起動してください</b><span id="rxPct" class="rxpct"></span></div>
+        <div class="bar" aria-hidden="true"><i id="rxBar"></i></div>
+        <p id="rxSub" class="rxsub">送る側の画面にカメラを向けて、100%になるまでそのまま映し続けます。</p>
       </div>
       <div class="row">
         <button id="camBtn" class="btn">カメラを起動</button>
       </div>
-      <div class="meter">
-        <b id="rxCount">復元 0 / –</b>
-        <span id="rxRate">受け取ったコマ 0</span>
-      </div>
-      <div id="rxFilm" class="film" aria-hidden="true"></div>
-      <p id="rxInfo" class="note">緑のマスが元に戻せたブロックです。全部そろうと自動で中身を表示します。</p>
+      <label class="check"><input type="checkbox" id="rxBeep" checked> 受け取ったら音で知らせる（送る側が「音の合図で止める」にしていれば、自動で止まります）</label>
+      <details class="more">
+        <summary>くわしい数字</summary>
+        <div class="meter">
+          <span id="rxRate">読めたQR 0 枚</span>
+          <span id="rxCount">元に戻せたブロック 0 / –</span>
+        </div>
+        <div id="rxFilm" class="film" aria-hidden="true"></div>
+        <p class="note">送る中身は小さな「ブロック」に分けて送られます。読めたQRが増えると、ブロックは終わりの方で一気に元に戻ります（緑のマス）。上の％は、全部そろうのに必要なQRのうち、どこまで集まったかの目安です。</p>
+      </details>
     </div>
     <div id="result" class="panel result" hidden></div>
   </section>
@@ -257,6 +291,7 @@ details p{font-size:14px;margin:8px 0 0}
   <details>
     <summary>しくみ</summary>
     <p><b>ファウンテン符号</b>：送る中身を圧縮して、同じ大きさの「ブロック」に分けます。最初はブロックをそのまま1つずつ流し、その後は、いくつかのブロックをXOR（重ね合わせ）で混ぜたコマを、毎回違う組み合わせで流し続けます。受け取る側は、すでに分かっているブロックを取り除いて、1つだけ残ったものから順に解いていきます。噴水から水をすくうように、どのコマを拾っても役に立つので、決まったコマを待つ必要がありません。</p>
+    <p><b>音の合図</b>：受け取り終わると、受け取った側が5つの高さの音を「ピロピロ」と3回鳴らします。音の並びは送る中身ごとに違い（約1万9千通り）、送る側はマイクで自分あての並びだけを聞き分けて止まります。近くで別の人が受け取りを終えても、取り違えません。音はその場で鳴らして聞くだけで、録音はしません。</p>
     <p><b>カラーQR</b>：赤・緑・青の光それぞれに別のQRを入れて重ねます。カメラの画像を赤・緑・青に分けて3回読み取るので、1コマで3枚分を運べます。画面の色やカメラの色合いに左右されるため、白黒より読み取りにくいことがあります。</p>
   </details>
 </div>
@@ -360,6 +395,65 @@ details p{font-size:14px;margin:8px 0 0}
     return [...set];
   }
 
+  // ---------- 音の合図 ----------
+  // 受け取った側が、送る中身のIDから決まる5つの音を鳴らす。送る側はマイクでその並びだけを聞き分けて止まる
+  const AIZU_F=[1800,2020,2270,2550,2860,3210,3600,4040]; // 使う8つの音の高さ（Hz）。スマホのスピーカーとマイクが得意な帯域
+  const AIZU_TONE=0.13, AIZU_GAP=0.03, AIZU_REST=0.35, AIZU_REPEAT=3;
+  // 並び：1音目は8通り、2音目からは「前と違う音」7通り → 8×7×7×7×7＝19208通り
+  function aizuSeq(id){
+    const h=idHash(id);let t=h%8,r=h>>>3;const s=[t];
+    for(let k=0;k<4;k++){t=(t+1+r%7)%8;r=Math.floor(r/7);s.push(t);}
+    return s;
+  }
+  // 鳴らす（OfflineAudioContextでも同じように動く）
+  function playAizu(ctx,seq,when,dest){
+    dest=dest||ctx.destination;
+    let t=when;
+    for(let rep=0;rep<AIZU_REPEAT;rep++){
+      for(const sym of seq){
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.type="sine";o.frequency.value=AIZU_F[sym];
+        g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.45,t+0.01);
+        g.gain.setValueAtTime(0.45,t+AIZU_TONE-0.015);g.gain.linearRampToValueAtTime(0,t+AIZU_TONE);
+        o.connect(g).connect(dest);o.start(t);o.stop(t+AIZU_TONE+0.01);
+        t+=AIZU_TONE+AIZU_GAP;
+      }
+      t+=AIZU_REST;
+    }
+    return t-when;
+  }
+  // 聞き分ける：マイクの音を短く区切って、8つの高さの強さを測る（ゲルツェル法）。
+  // 全体の音量ではなく「すぐ隣の高さ（音と音のあいだ）」と比べるので、低いブーン音や話し声、ザーッという雑音に強い
+  function aizuDetector(sr){
+    const N=1024, win=new Float32Array(N);
+    for(let i=0;i<N;i++)win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));
+    const REF=[1650];for(let i=0;i<7;i++)REF.push(Math.sqrt(AIZU_F[i]*AIZU_F[i+1]));REF.push(4400);
+    const cT=AIZU_F.map(f=>2*Math.cos(2*Math.PI*f/sr)), cR=REF.map(f=>2*Math.cos(2*Math.PI*f/sr));
+    const x=new Float32Array(N), rp=new Float64Array(REF.length);
+    let last=-1,run=0,quiet=0,hist=[];
+    const power=c=>{let s1=0,s2=0;for(let i=0;i<N;i++){const s=x[i]+c*s1-s2;s2=s1;s1=s;}return s1*s1+s2*s2-c*s1*s2;};
+    // buf：直近の音（N個以上）、dt：前回からの秒数、seq：待っている並び。並びがそろったら true
+    return function(buf,dt,seq){
+      const o=buf.length-N;let e=0;
+      for(let i=0;i<N;i++){const v=buf[o+i]*win[i];x[i]=v;e+=v*v;}
+      let tone=-1;
+      if(e>N*1e-12){
+        let b=-1,bp=0,sp=0;
+        for(let i=0;i<8;i++){const p=power(cT[i]);if(p>bp){sp=bp;bp=p;b=i;}else if(p>sp)sp=p;}
+        for(let i=0;i<REF.length;i++)rp[i]=power(cR[i]);
+        const floor=Array.from(rp).sort((a,c)=>a-c)[REF.length>>1]; // 隣の高さの強さ（真ん中の値）
+        // ① 隣の高さより30倍以上強く ② 2番目に強い合図の高さより6倍以上強いときだけ「鳴っている」とみなす
+        if(bp>30*floor&&bp>6*sp)tone=b;
+      }
+      if(tone===last)run++;else{last=tone;run=1;}
+      if(tone<0){quiet+=dt;if(quiet>0.2&&hist.length&&hist[hist.length-1]!==-1)hist.push(-1);}
+      else{quiet=0;if(run===2&&hist[hist.length-1]!==tone){hist.push(tone);if(hist.length>16)hist.shift();}}
+      if(!seq||hist.length<seq.length)return false;
+      for(let k=0;k<seq.length;k++)if(hist[hist.length-seq.length+k]!==seq[k])return false;
+      hist=[];return true;
+    };
+  }
+
   // ---------- タブ ----------
   function show(which){
     const send=which==="send";
@@ -367,7 +461,7 @@ details p{font-size:14px;margin:8px 0 0}
     $("#tabRecv").setAttribute("aria-selected",!send);
     $("#paneSend").hidden=!send;
     $("#paneRecv").hidden=send;
-    if(send){stopCam();startLoop();}else{stopLoop();}
+    if(send){stopCam();startLoop();}else{stopLoop();stopListen();}
   }
   $("#tabSend").onclick=()=>show("send");
   $("#tabRecv").onclick=()=>show("recv");
@@ -767,6 +861,44 @@ details p{font-size:14px;margin:8px 0 0}
   $("#full").onclick=()=>{$("#full").hidden=true;};
 
 
+  // ---------- 音の合図を聞く（送る側） ----------
+  let listen=null;
+  async function startListen(){
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$("#listenInfo").textContent="このブラウザではマイクが使えません。https のページで開いてください。";return;}
+    const ctx=getCtx();if(!ctx){$("#listenInfo").textContent="この端末では音を扱えません。";return;}
+    let mic;
+    try{
+      // 声用の加工（雑音消し・エコー消し・音量の自動調整）は合図の音を消してしまうので切る
+      mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+    }catch(e){$("#listenInfo").textContent="マイクを使えませんでした。ブラウザの設定でマイクを許可してください。";return;}
+    try{await ctx.resume();}catch(e){}
+    const src=ctx.createMediaStreamSource(mic), an=ctx.createAnalyser();
+    an.fftSize=2048;src.connect(an);
+    const buf=new Float32Array(an.fftSize), detect=aizuDetector(ctx.sampleRate);
+    let prev=performance.now();
+    const timer=setInterval(()=>{
+      const now=performance.now(),dt=(now-prev)/1000;prev=now;
+      an.getFloatTimeDomainData(buf);
+      if(job&&detect(buf,dt,aizuSeq(job.id)))heard();
+    },25);
+    listen={mic,src,an,timer};
+    $("#listenBtn").textContent="聞いています（押すとやめる）";$("#listenBtn").classList.add("listening");
+    $("#listenInfo").textContent="マイクで合図を待っています。受け取った側の音が聞こえる近さで使ってください。";
+  }
+  function stopListen(msg){
+    if(listen){clearInterval(listen.timer);try{listen.src.disconnect();}catch(e){}listen.mic.getTracks().forEach(t=>t.stop());listen=null;}
+    $("#listenBtn").textContent="音の合図で止める";$("#listenBtn").classList.remove("listening");
+    $("#listenInfo").textContent=msg||"押すとマイクで音を聞きます。受け取った側が合図の音を鳴らしたら、自動で止まります。";
+  }
+  function heard(){
+    playing=false;stopLoop();$("#play").textContent="再生";
+    const d=new Date();
+    stopListen(`受け取り完了の合図を聞いたので止めました（${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}）。`);
+    $("#listenInfo").className="note okmsg";
+    if(navigator.vibrate)navigator.vibrate([120,80,120]);
+  }
+  $("#listenBtn").onclick=()=>{$("#listenInfo").className="note";listen?stopListen():startListen();};
+
   // ---------- 印刷用シート ----------
   const pv=$("#printView");
   let pUrls=[], pRun=0;
@@ -834,7 +966,17 @@ details p{font-size:14px;margin:8px 0 0}
   const sctx=scanCanvas.getContext("2d",{willReadFrequently:true});
   let stream=null, scanning=false, rx=null, rxCells=[], chan=null, rxUrl=null;
 
+  // スマホは「タップしたとき」にしか音を出す準備ができないので、カメラ起動のタップで済ませておく
+  function unlockSound(){
+    const ctx=getCtx();if(!ctx)return;
+    try{ctx.resume();const b=ctx.createBuffer(1,1,22050),s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.start(0);}catch(e){}
+  }
+  function soundAizu(id){
+    const ctx=getCtx();if(!ctx)return;
+    try{ctx.resume();playAizu(ctx,aizuSeq(id),ctx.currentTime+0.05);}catch(e){}
+  }
   async function startCam(){
+    if($("#rxBeep").checked)unlockSound();
     if(rx&&rx.done){resetRx();$("#result").hidden=true;}
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
       $("#camIdle").textContent="このブラウザではカメラが使えません。https のページで開いてください。";return;
@@ -847,6 +989,8 @@ details p{font-size:14px;margin:8px 0 0}
     video.srcObject=stream;
     await video.play().catch(()=>{});
     $("#camIdle").hidden=true;
+    if(rx&&!rx.done){const t=performance.now();rx.t0=t;rx.last=t;rx.f0=rx.frames;}
+    clearInterval(rxTimer);rxTimer=setInterval(rxUi,500);rxUi();
     $("#camBtn").textContent="カメラを止める";
     scanning=true;
     requestAnimationFrame(scan);
@@ -857,6 +1001,7 @@ details p{font-size:14px;margin:8px 0 0}
     video.srcObject=null;
     $("#camIdle").hidden=false;
     $("#camBtn").textContent="カメラを起動";
+    clearInterval(rxTimer);rxTimer=null;rxUi();
   }
   $("#camBtn").onclick=()=>{stream?stopCam():startCam();};
 
@@ -891,11 +1036,46 @@ details p{font-size:14px;margin:8px 0 0}
     if(scanning)requestAnimationFrame(scan);
   }
 
+  // 受け取りの様子を、「何％」「あと何秒」「今どうすればいいか」で見せる
+  const NEED=1.15; // 全部そろうのに必要なQRは、ブロック数のおよそ1.15倍（実測）
+  let rxTimer=null;
+  function mmssJa(t){t=Math.max(1,Math.round(t));if(t<60)return `約${t}秒`;t=Math.round(t/10)*10;const m=Math.floor(t/60),x=t%60;return `約${m}分${x?x+"秒":""}`;}
+  function rxUi(){
+    const now=performance.now(), camOn=!!stream, st=$("#rxStatus");
+    let state,title,sub,pct=null;
+    if(rx){
+      const need=Math.max(1,Math.ceil(rx.K*NEED));
+      pct=rx.done?100:Math.min(99,Math.floor(100*Math.max(rx.known/rx.K,rx.frames/need)));
+      if(rx.done){state="done";title="受け取りました";sub="カメラを離して大丈夫です。中身は下に出ています。";}
+      else if(!camOn){state="paused";title="一時停止中";sub="ここまでの分は残っています。もう一度「カメラを起動」を押すと、続きから受け取れます。";}
+      else if(now-rx.last>2500){state="stalled";title="読めていません";sub="QRが枠に入るように、近づけるか少し離してください。ここまでの分は残っています。";}
+      else{
+        state="receiving";title="受け取り中";
+        const got=rx.frames-(rx.f0||0), el=(now-rx.t0)/1000, rate=got>=3&&el>=2?got/el:0, left=need-rx.frames;
+        sub="そのまま向けていてください。"+(rate?(left>0?`あと${mmssJa(left/rate)}`:"もう少しです"):"残り時間を計っています")+`（全体 ${kb(rx.len)}）。終わると自動で中身が出ます。`;
+      }
+      $("#rxRate").textContent=`読めたQR ${rx.frames} 枚`;
+      $("#rxCount").textContent=`元に戻せたブロック ${rx.known} / ${rx.K}`;
+    }else if(camOn){state="searching";title="QRを探しています";sub="送る側の画面のQRが、枠の中に入るように向けてください。";}
+    else{state="idle";title="カメラを起動してください";sub="送る側の画面にカメラを向けて、100%になるまでそのまま映し続けます。";}
+    st.dataset.state=state;
+    $("#rxTitle").textContent=title;$("#rxSub").textContent=sub;
+    $("#rxPct").textContent=pct===null?"":pct+"%";
+    $("#rxBar").style.width=(pct||0)+"%";
+    const cp=$("#camPct");cp.hidden=!(camOn&&pct!==null);cp.textContent=pct===null?"":pct+"%";
+    if(!camOn){
+      $("#camIdle").textContent=state==="done"?"受け取りが終わりました。次のものを受け取るときは「次を受け取る」を押してください"
+        :state==="paused"?"一時停止中です。「カメラを起動」で続きから受け取れます"
+        :"「カメラを起動」を押して、QRを枠の中に映してください。紙のときは、QRを1つずつ枠に入れていきます";
+      $("#camBtn").textContent=state==="done"?"次を受け取る":"カメラを起動";
+    }
+  }
+
   function resetRx(){
     if(rxUrl){URL.revokeObjectURL(rxUrl);rxUrl=null;}
     rx=null;$("#rxFilm").textContent="";
-    $("#rxCount").textContent="復元 0 / –";$("#rxRate").textContent="受け取ったコマ 0";
-    $("#rxInfo").textContent="緑のマスが元に戻せたブロックです。全部そろうと自動で中身を表示します。";
+    $("#rxCount").textContent="元に戻せたブロック 0 / –";$("#rxRate").textContent="読めたQR 0 枚";
+    rxUi();
   }
   // 解けたブロックを使って、保留中のコマを1つずつほどいていく
   function propagate(){
@@ -956,20 +1136,17 @@ details p{font-size:14px;margin:8px 0 0}
     if(data.length>3000||len>K*data.length||len<=(K-1)*data.length)return;
     if(!rx||rx.id!==id||rx.K!==K){
       if(rxUrl){URL.revokeObjectURL(rxUrl);rxUrl=null;}
-      rx={id,K,len,B:data.length,cdf:solitonCDF(K),idh:idHash(id),blocks:new Array(K).fill(null),known:0,pending:[],seen:new Set(),frames:0,done:false,lastGauss:-2};
+      rx={id,K,len,B:data.length,cdf:solitonCDF(K),idh:idHash(id),blocks:new Array(K).fill(null),known:0,pending:[],seen:new Set(),frames:0,done:false,lastGauss:-2,t0:performance.now(),last:performance.now()};
       rxCells=film($("#rxFilm"),K);
       $("#result").hidden=true;
     }
     if(rx.done||rx.seen.has(seed)||data.length!==rx.B)return;
-    rx.seen.add(seed);rx.frames++;
+    rx.seen.add(seed);rx.frames++;rx.last=performance.now();
     let idx=indices(rx,seed);
     idx=idx.filter(i=>{if(rx.blocks[i]){xorInto(data,rx.blocks[i]);return false;}return true;});
     if(idx.length){rx.pending.push({idx,data});propagate();if(rx.known<K)tryGauss();}
-    $("#rxCount").textContent=`復元 ${rx.known} / ${K}`;
-    $("#rxRate").textContent=`受け取ったコマ ${rx.frames}`;
-    const left=K-rx.known;
-    $("#rxInfo").textContent=left?`あと ${left} ブロック。そのまま映し続けてください。`:"そろいました。元に戻しています…";
-    if(!left){rx.done=true;finish();}
+    if(rx.known===K){rx.done=true;finish();}
+    rxUi();
   }
 
   async function finish(){
@@ -985,6 +1162,7 @@ details p{font-size:14px;margin:8px 0 0}
       if(meta.z)bytes=await gunzip(bytes);
       const ok=bytes.length===meta.size;
       stopCam();
+      if(ok&&$("#rxBeep").checked)soundAizu(rx.id);
       const h=document.createElement("b");
       h.textContent=`受け取りました：${meta.name}（${kb(bytes.length)}）`;
       res.appendChild(h);
@@ -1010,13 +1188,19 @@ details p{font-size:14px;margin:8px 0 0}
       }
       const a=document.createElement("a");a.href=rxUrl;a.download=meta.name;a.textContent="ファイルとして保存";
       res.appendChild(a);
+      if(ok){
+        const id=rx.id,bp=document.createElement("button");bp.className="btn sub";bp.textContent="合図の音をもう一度鳴らす";
+        bp.onclick=()=>{unlockSound();soundAizu(id);};
+        res.appendChild(bp);
+      }
       const again=document.createElement("button");again.className="btn";again.textContent="もう一度受け取る";
       again.onclick=()=>{resetRx();res.hidden=true;startCam();};
       res.appendChild(again);
-      $("#rxInfo").textContent="完了しました。";
+      if(navigator.vibrate)navigator.vibrate(200);
+      rxUi();
     }catch(e){
       const w=document.createElement("p");w.className="warn";w.textContent="元に戻せませんでした。もう一度読み取ってください。";res.appendChild(w);
-      rx=null;
+      rx=null;rxUi();
     }
     res.hidden=false;
   }
@@ -1034,7 +1218,7 @@ details p{font-size:14px;margin:8px 0 0}
   if(!navigator.onLine)off.textContent="オフラインで動いています。";
 
   // 動作確認用（アドレスに ?test を付けたときだけ）
-  if(/[?&]test\b/.test(location.search))window.ugokuQR={readImage,audio:()=>audioDone&&audioDone.bytes};
+  if(/[?&]test\b/.test(location.search))window.ugokuQR={readImage,handle,audio:()=>audioDone&&audioDone.bytes,aizuSeq,playAizu,aizuDetector,job:()=>job,listening:()=>!!listen};
 
   // ---------- 開始 ----------
   $("#txt").value=SAMPLE;
