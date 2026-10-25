@@ -1,5 +1,5 @@
 // 動くQR：一度開いたら、ページと部品を端末に保存してオフラインでも開けるようにする
-const VERSION = "ugoku-qr-v13";
+const VERSION = "ugoku-qr-v14";
 const CORE = [
   "./index.html", "./manifest.webmanifest",
   "./lib/qrcode.js", "./lib/jsQR.js", "./lib/lame.min.js",
@@ -12,9 +12,10 @@ self.addEventListener("install", e => {
 });
 
 self.addEventListener("activate", e => {
+  // 同じ yannsi.github.io にある他の作品の保存は消さない（自分の古い版だけ消す）
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== FONTS).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith("ugoku-qr-") && k !== VERSION && k !== FONTS).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
