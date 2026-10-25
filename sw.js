@@ -1,5 +1,5 @@
 // 動くQR：一度開いたら、ページと部品を端末に保存してオフラインでも開けるようにする
-const VERSION = "ugoku-qr-v12";
+const VERSION = "ugoku-qr-v13";
 const CORE = [
   "./index.html", "./manifest.webmanifest",
   "./lib/qrcode.js", "./lib/jsQR.js", "./lib/lame.min.js",
