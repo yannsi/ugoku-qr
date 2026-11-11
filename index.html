@@ -1039,20 +1039,35 @@ details p{font-size:14px;margin:8px 0 0}
   // 受け取りの様子を、「何％」「あと何秒」「今どうすればいいか」で見せる
   const NEED=1.15; // 全部そろうのに必要なQRは、ブロック数のおよそ1.15倍（実測）
   let rxTimer=null;
+  // あと何枚読めばそろいそうか。
+  // ・最初の1周（ブロックをそのまま1つずつ送っている間）は、残りの枚数と、ここまでの読み落としの割合から見積もる
+  // ・そのあとは、足りないブロックが少ないほど「当たり」のQRが来にくいので、足りない数から見積もる
+  //   （足りない数がまだ多いうちは、あるところで一気にほどけるので、読んだ枚数から見積もる）
+  function rxLeft(K,frames,known,minSeed,maxSeed){
+    const u=K-known; if(u<=0)return 0;
+    const after=(f,x)=>x<=0.5?0:Math.max(K*NEED-f, x>0.3*K?0:Math.min(x*Math.max(6,K/18),0.22*K));
+    if(maxSeed<K-1){
+      const s=K-1-maxSeed, r=Math.min(1,frames/Math.max(1,maxSeed-minSeed+1));
+      return Math.max(1,Math.ceil(s*r+after(frames+s*r,u-s*r)));
+    }
+    return Math.max(1,Math.ceil(after(frames,u)));
+  }
   function mmssJa(t){t=Math.max(1,Math.round(t));if(t<60)return `約${t}秒`;t=Math.round(t/10)*10;const m=Math.floor(t/60),x=t%60;return `約${m}分${x?x+"秒":""}`;}
   function rxUi(){
     const now=performance.now(), camOn=!!stream, st=$("#rxStatus");
     let state,title,sub,pct=null;
     if(rx){
-      const need=Math.max(1,Math.ceil(rx.K*NEED));
-      pct=rx.done?100:Math.min(99,Math.floor(100*Math.max(rx.known/rx.K,rx.frames/need)));
+      const left=rx.done?0:rxLeft(rx.K,rx.frames,rx.known,rx.minSeed,rx.maxSeed);
+      // ％は「読んだ枚数 ÷（読んだ枚数＋あと要りそうな枚数）」。見積もりが変わっても、表示は戻さない
+      rx.pct=rx.done?100:Math.max(rx.pct||0,Math.min(99,Math.floor(100*rx.frames/(rx.frames+left))));
+      pct=rx.pct;
       if(rx.done){state="done";title="受け取りました";sub="カメラを離して大丈夫です。中身は下に出ています。";}
       else if(!camOn){state="paused";title="一時停止中";sub="ここまでの分は残っています。もう一度「カメラを起動」を押すと、続きから受け取れます。";}
       else if(now-rx.last>2500){state="stalled";title="読めていません";sub="QRが枠に入るように、近づけるか少し離してください。ここまでの分は残っています。";}
       else{
         state="receiving";title="受け取り中";
-        const got=rx.frames-(rx.f0||0), el=(now-rx.t0)/1000, rate=got>=3&&el>=2?got/el:0, left=need-rx.frames;
-        sub="そのまま向けていてください。"+(rate?(left>0?`あと${mmssJa(left/rate)}`:"もう少しです"):"残り時間を計っています")+`（全体 ${kb(rx.len)}）。終わると自動で中身が出ます。`;
+        const got=rx.frames-(rx.f0||0), el=(now-rx.t0)/1000, rate=got>=3&&el>=2?got/el:0, miss=rx.K-rx.known;
+        sub="そのまま向けていてください。"+(rate?`あと${mmssJa(left/rate)}`:"残り時間を計っています")+(rx.maxSeed>=rx.K-1&&miss<=0.3*rx.K?`、足りないブロックはあと${miss}個`:"")+`（全体 ${kb(rx.len)}）。終わると自動で中身が出ます。`;
       }
       $("#rxRate").textContent=`読めたQR ${rx.frames} 枚`;
       $("#rxCount").textContent=`元に戻せたブロック ${rx.known} / ${rx.K}`;
@@ -1136,12 +1151,13 @@ details p{font-size:14px;margin:8px 0 0}
     if(data.length>3000||len>K*data.length||len<=(K-1)*data.length)return;
     if(!rx||rx.id!==id||rx.K!==K){
       if(rxUrl){URL.revokeObjectURL(rxUrl);rxUrl=null;}
-      rx={id,K,len,B:data.length,cdf:solitonCDF(K),idh:idHash(id),blocks:new Array(K).fill(null),known:0,pending:[],seen:new Set(),frames:0,done:false,lastGauss:-2,t0:performance.now(),last:performance.now()};
+      rx={id,K,len,B:data.length,cdf:solitonCDF(K),idh:idHash(id),blocks:new Array(K).fill(null),known:0,pending:[],seen:new Set(),frames:0,minSeed:seed,maxSeed:seed,pct:0,done:false,lastGauss:-2,t0:performance.now(),last:performance.now()};
       rxCells=film($("#rxFilm"),K);
       $("#result").hidden=true;
     }
     if(rx.done||rx.seen.has(seed)||data.length!==rx.B)return;
     rx.seen.add(seed);rx.frames++;rx.last=performance.now();
+    if(seed<rx.minSeed)rx.minSeed=seed;if(seed>rx.maxSeed)rx.maxSeed=seed;
     let idx=indices(rx,seed);
     idx=idx.filter(i=>{if(rx.blocks[i]){xorInto(data,rx.blocks[i]);return false;}return true;});
     if(idx.length){rx.pending.push({idx,data});propagate();if(rx.known<K)tryGauss();}
